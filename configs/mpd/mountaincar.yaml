@@ -1,0 +1,39 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+
+env_cfg : 
+
+  env_name : "MountainCarContinuous-v0"
+  normalize_obs : False
+  reward_scale : 100
+  reward_shift : 0.
+  discount : 0.99
+  
+
+algo_cfg :
+  
+  learning_rate : 0.01
+  sigma : 0.02
+  n_max : 9
+  n_info : 8
+  n_parallel : 1
+  num_rollouts : 1
+  num_rollouts_center : 2
+  num_learning_steps : 130 #
+    
+
+kernel_cfg:
+
+  use_ard : True
+  lengthscale_bound : [0.00125,0.025]
+  
+
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: "cartpole"
+  use_bias : False
+  

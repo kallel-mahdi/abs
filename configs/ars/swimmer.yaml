@@ -1,0 +1,47 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+env_cfg : 
+
+  env_name : Swimmer-v4
+  normalize_obs : False
+  reward_scale : 65.
+  reward_shift : 0.
+  discount : 0.995
+
+algo_cfg :
+  
+  learning_rate : 0.02
+  sigma : 0.01 ### 
+  n_info : 2
+  top_directions : 1
+  num_rollouts : 1  
+  num_learning_steps : 1000
+
+    
+
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: tanh
+  use_bias : False
+  
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,75 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+
+env_cfg : 
+
+  env_name : Walker2d-v4
+  normalize_obs : True
+  reward_scale : 300.
+  reward_shift : 0.
+  discount : 0.99
+
+algo_cfg :
+  
+  learning_rate : 0.0025
+  sigma : 0.025 ### 
+  n_max : 75
+  n_info : 24
+  n_parallel : 1
+  num_rollouts : 1
+  num_rollouts_center : 5
+  num_learning_steps : 1000
+  
+
+mean_cfg :
+
+  n_critics : 5
+  aggregation : "softmax"
+  reset_critic : True
+  buffer_max_size : 1_000_000
+
+  
+
+kernel_cfg:
+
+  use_ard : True
+  lengthscale_bound : [0.000625,0.0125]
+  
+
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: "tanh"
+  use_bias : False
+  
+
+critic_cfg :
+
+    
+    critic_batch_size : 256
+    policy_delay: 2 #2
+    polyak :  0.005 #0.005
+    m: 2 ### original is 2
+    n : 2  ### original is 2
+    hidden_dims : [256,256]
+    dropout_rate : 0.01
+    use_layer_norm : True
+    activation_fn : "relu"
+    num_steps : 5000
+  
+
+
+
+
+
+
+
+
+
+
+
+
+

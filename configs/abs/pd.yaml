@@ -1,0 +1,82 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+
+env_cfg : 
+
+  env_name : Pendulum-v1
+  normalize_obs : False
+  reward_scale : 800
+  reward_shift : 0.
+  discount : 0.99
+  
+
+algo_cfg :
+  
+  learning_rate : 0.005 ## 0.01
+  sigma : 0.02
+  n_max : 5
+  n_info : 4
+  n_parallel : 1
+  num_rollouts : 5
+  num_rollouts_center : 5
+  num_learning_steps : 130 #
+    
+
+mean_cfg :
+
+  n_critics : 5
+  aggregation : "softmax"
+  reset_critic : True
+  buffer_max_size : 1_000_000
+
+  
+
+kernel_cfg:
+
+  use_ard : True
+  lengthscale_bound : [0.0025,0.05]
+  
+
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: "cartpole"
+  use_bias : False
+  
+
+critic_cfg :
+
+    
+    critic_batch_size : 256
+    policy_delay: 2 #2
+    polyak :  0.005 #0.005
+    m: 2 ### original is 2
+    n : 2  ### original is 2
+    hidden_dims : [256,256]
+    dropout_rate : 0.01
+    use_layer_norm : True
+    activation_fn : "relu"
+    num_steps : 20000
+  
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

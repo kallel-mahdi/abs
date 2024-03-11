@@ -1,0 +1,66 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+
+env_cfg : 
+
+  env_name : InvertedPendulum-v4
+  normalize_obs : False
+  reward_scale : 100
+  reward_shift : 0.
+  discount : 0.99
+  
+  
+
+algo_cfg :
+  
+  learning_rate : 0.02
+  sigma : 0.02
+  n_info : 6
+  top_directions : 2
+  num_rollouts : 1
+  num_learning_steps : 200
+  
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: "cartpole"
+  use_bias : False
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

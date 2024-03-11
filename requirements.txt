@@ -1,0 +1,15 @@
+jaxopt==0.8
+flax==0.7.4
+optax==0.1.7
+chex==0.1.82
+mujoco==2.3.3
+wandb==0.14.2
+
+matplotlib
+plotly
+pandas
+swig
+gymnasium[mujoco]
+imageio
+protobuf==3.20.*
+
