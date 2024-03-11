@@ -1,0 +1,45 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+
+env_cfg : 
+
+  env_name : HalfCheetah-v4
+  normalize_obs : True
+  reward_scale : 400.
+  reward_shift : 0.
+  discount : 0.99 #0.995
+  
+
+algo_cfg :
+  
+  learning_rate : 0.02
+  sigma : 0.03 ### 
+  n_info : 64
+  top_directions : 4 ## ARS
+  num_rollouts : 1
+  num_learning_steps : 160
+  
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: tanh
+  use_bias : False
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

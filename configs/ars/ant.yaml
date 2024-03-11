@@ -1,0 +1,43 @@
+logger_cfg : 
+  run_name : 
+  project_name : 
+
+
+env_cfg : 
+
+  env_name : Ant-v4 
+  normalize_obs : True
+  reward_scale : 400.
+  reward_shift : 0.
+  discount : 0.99
+  
+
+algo_cfg :
+  
+  learning_rate : 0.015
+  sigma : 0.025 ### 
+  n_info : 120
+  num_rollouts : 1
+  num_learning_steps : 350
+  top_directions : 40 ## ARS
+
+
+policy_cfg: 
+
+  hidden_dims: ()
+  output_activation: tanh
+  use_bias : False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
