@@ -1,0 +1,17 @@
+env:
+  name: InvertedPendulum-v5
+  discount: 0.99
+  reward_scale: 100.0
+  normalize_obs: false
+  action_scale: 3.0
+search:
+  iterations: 130
+  queries: 6
+  episodes: 1
+  sigma: 0.02
+  learning_rate: 0.01
+gp:
+  center_episodes: 2
+  n_max: 21
+  lengthscale_bounds: [0.0025, 0.05]
+  constant_mean: true

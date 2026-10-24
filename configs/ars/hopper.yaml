@@ -1,47 +1,13 @@
-logger_cfg : 
-  run_name : 
-  project_name : 
-
-
-env_cfg : 
-
-  env_name : Hopper-v4 
-  normalize_obs : True
-  reward_scale : 270.
-  reward_shift : 0.
-  discount : 0.99
-  
-
-algo_cfg :
-  
-  learning_rate : 0.01
-  sigma : 0.025 ### 
-  n_info : 16
-  top_directions : 4 ## ARS
-  num_rollouts : 1
-  num_learning_steps : 330
-  
-  
-  
-policy_cfg: 
-
-  hidden_dims: ()
-  output_activation: tanh
-  use_bias : False
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+env:
+  name: Hopper-v5
+  discount: 0.99
+  reward_scale: 270.0
+  normalize_obs: true
+search:
+  iterations: 330
+  queries: 16
+  episodes: 1
+  sigma: 0.025
+  learning_rate: 0.01
+ars:
+  top_directions: 4

@@ -1,42 +1,14 @@
-logger_cfg : 
-  run_name : 
-  project_name : 
-
-
-env_cfg : 
-
-  env_name : Walker2d-v4 
-  normalize_obs : True
-  reward_scale : 300.
-  reward_shift : 0.
-  discount : 0.99
-  
-algo_cfg :
-  
-  learning_rate : 0.02
-  sigma : 0.025 ### 
-  n_info : 80
-  top_directions : 30 ## ARS
-  num_rollouts : 1
-  num_learning_steps : 180
-
-
-policy_cfg: 
-
-  hidden_dims: ()
-  output_activation: tanh
-  use_bias : False
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+env:
+  name: Walker2d-v5
+  kwargs: {xml_file: walker2d.xml}  # v4's model: left-foot friction 0.9, not 1.9
+  discount: 0.99
+  reward_scale: 300.0
+  normalize_obs: true
+search:
+  iterations: 180
+  queries: 80
+  episodes: 1
+  sigma: 0.025
+  learning_rate: 0.02
+ars:
+  top_directions: 30
