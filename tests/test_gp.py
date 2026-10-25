@@ -1,5 +1,7 @@
 """The GP equations against dense references and against the released implementation's formulas."""
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -8,6 +10,7 @@ import pytest
 from abps.config import GP
 from abps.core import acquisition, gp
 from abps.core.optimize import minimize
+from abps.methods.local_bo import ascent
 
 D, N = 3, 7
 
@@ -25,7 +28,7 @@ def problem(key):
 def test_nll_is_the_gaussian_marginal_likelihood(problem):
     params, theta, returns, prior = problem
     mean = prior + params.constant
-    expected = -jax.scipy.stats.multivariate_normal.logpdf(returns, mean, gp.covariance(params, theta))
+    expected = -jax.scipy.stats.multivariate_normal.logpdf(returns, mean, gp.regularize(gp.covariance(params, theta)))
     np.testing.assert_allclose(gp.nll(params, theta, returns - prior), expected, rtol=1e-4)
 
 
@@ -49,7 +52,7 @@ def test_average_mean_fit_is_the_released_broadcast_objective(problem):
     average mean, so both have the same maximizer."""
     params, theta, returns, prior = problem
     y = returns[:, None] - prior[None] - params.constant  # the released (n, n) broadcast
-    k = gp.covariance(params, theta)
+    k = gp.regularize(gp.covariance(params, theta))
     released = 0.5 * jnp.sum(y.T @ jnp.linalg.solve(k, y) + jnp.linalg.slogdet(k)[1] + N * jnp.log(2 * jnp.pi))
     np.testing.assert_allclose(released, N**2 * gp.nll(params, theta, returns - prior.mean()), rtol=1e-4)
 
@@ -72,8 +75,64 @@ def test_gradient_posterior_is_the_derivative_of_the_posterior(problem):
     np.testing.assert_allclose(sigma, jax.jacfwd(jax.grad(cross_covariance), argnums=1)(x, x), rtol=1e-4, atol=1e-6)
 
 
-def test_info_is_the_released_acquisition(problem):
-    """The Woodbury form equals the released b1 + b2, computed from the joint factorization of X ∪ Z."""
+def test_dense_window_is_regularized_before_conditioning(key):
+    """Near-duplicate policies with tiny observation noise must still give a valid gradient posterior in FP32."""
+    points = jax.random.normal(key, (51, 6)) * 1e-4
+    params = gp.Params(jnp.full(6, 0.1), jnp.asarray(0.3), jnp.asarray(1e-6), jnp.zeros(()))
+    returns = jnp.sin(points[:, 0])
+    prior = jnp.zeros(len(points))
+    posterior = gp.condition(params, points, returns, prior)
+    mean, cov = gp.gradient(posterior, points[0], jnp.zeros(6))
+    assert jnp.isfinite(posterior.factor).all()
+    assert jnp.linalg.eigvalsh(cov).min() > 0
+    assert jnp.isfinite(acquisition.Local.at(posterior, points[0], jnp.zeros(6)).factor).all()
+    assert jnp.isfinite(ascent(mean, cov)[0]).all()
+    assert all(jnp.isfinite(x).all() for x in jax.tree.leaves(jax.grad(gp.nll)(params, points, returns)))
+
+
+def test_nearly_duplicate_windows_remain_positive_definite(key):
+    """FP32 kernel and derivative rounding disagree for clustered policies; an epsilon-sized nugget is insufficient."""
+    def one(key):
+        a, b, c, d, e = jax.random.split(key, 5)
+        length = 10 ** jax.random.uniform(a, (), minval=-3.0, maxval=0.0)
+        scale = 10 ** jax.random.uniform(b, (), minval=-3.0, maxval=0.0)
+        noise = 10 ** jax.random.uniform(c, (), minval=-8.0, maxval=-1.0)
+        radius = length * 10 ** jax.random.uniform(d, (), minval=-5.0, maxval=1.0)
+        points = radius * jax.random.normal(e, (51, 33))
+        params = gp.Params(jnp.full(33, length), scale, noise, jnp.zeros(()))
+        posterior = gp.condition(params, points, jnp.zeros(51), jnp.zeros(51))
+        _, cov = gp.gradient(posterior, points[0], jnp.zeros(33))
+        return jnp.linalg.eigvalsh(cov)[0]
+
+    assert (jax.jit(jax.vmap(one))(jax.random.split(key, 128)) > 0).all()
+
+
+def test_hopper_gradient_covariance_remains_factorizable():
+    """The first failed query from seed 0; inverse-form covariance lost positive definiteness on the GPU."""
+    with np.load(Path(__file__).parent / "data" / "hopper_gradient_covariance.npz") as fixture:
+        data = {name: jnp.asarray(value) for name, value in fixture.items()}
+    params = gp.Params(*(data[name] for name in ("lengthscales", "scale", "noise", "constant")))
+    posterior = gp.Posterior(params, data["points"], data["factor"], data["alpha"])
+    mean, cov = gp.gradient(posterior, data["theta"], data["prior_gradient"])
+    direction, probability = ascent(mean, cov)
+    local = acquisition.Local.at(posterior, data["theta"], data["prior_gradient"])
+    assert jnp.isfinite(gp.cholesky(cov)).all()
+    assert jnp.isfinite(direction).all()
+    assert jnp.isfinite(probability)
+    assert jnp.isfinite(acquisition.info(jnp.zeros_like(data["theta"]), local))
+
+
+def test_ascent_confidence_uses_the_regularized_covariance():
+    direction, probability = ascent(jnp.ones(1), jnp.array([[-5e-11]]))
+    assert jnp.isfinite(direction).all()
+    assert probability == 1
+    zero, probability = ascent(jnp.zeros(1), jnp.ones((1, 1)))
+    np.testing.assert_array_equal(zero, [0])
+    assert probability == 0.5
+
+
+def test_info_matches_direct_gaussian_conditioning(problem):
+    """Woodbury equals the direct expected Mahalanobis norm after conditioning, with the same regularization."""
     params, theta, returns, prior = problem
     posterior = gp.condition(params, theta, returns, prior)
     x, prior_gradient = theta[0] + 0.01, jnp.array([0.2, -0.1, 0.3])
@@ -81,18 +140,19 @@ def test_info_is_the_released_acquisition(problem):
     offset = jnp.array([0.02, -0.03, 0.01])
 
     z = x + offset[None]
-    joint = jnp.concatenate([theta, z])
-    cross = gp.kernel_gradient(params, x, joint)
     curvature = jnp.diag(params.scale**2 / (params.lengthscales**2 * D))
-    sigma_xz = curvature - cross.T @ jnp.linalg.solve(gp.covariance(params, joint), cross)
+    k = gp.regularize(gp.covariance(params, theta))
+    cross = gp.kernel_gradient(params, x, theta)
+    sigma = gp.regularize(curvature - cross.T @ jnp.linalg.solve(k, cross))
     mu, _ = gp.gradient(posterior, x, prior_gradient)
     k_xz = gp.kernel(params, theta, z)
-    sigma_z = gp.covariance(params, z) - k_xz.T @ jnp.linalg.solve(gp.covariance(params, theta), k_xz)
-    c = gp.kernel_gradient(params, x, z).T - gp.kernel_gradient(params, x, theta).T @ jnp.linalg.solve(
-        gp.covariance(params, theta), k_xz
-    )
-    a = jax.scipy.linalg.solve_triangular(jnp.linalg.cholesky(sigma_z), c.T, lower=True).T
-    released = mu @ jnp.linalg.solve(sigma_xz, mu) + jnp.trace(a.T @ jnp.linalg.solve(sigma_xz, a))
+    sigma_z = gp.covariance(params, z) - k_xz.T @ jnp.linalg.solve(k, k_xz)
+    c = gp.kernel_gradient(params, x, z).T - cross.T @ jnp.linalg.solve(k, k_xz)
+    conditional = sigma_z - c.T @ jnp.linalg.solve(sigma, c)
+    sigma_z += gp.regularize(conditional) - conditional
+    explained = c @ jnp.linalg.solve(sigma_z, c.T)
+    sigma_xz = sigma - explained
+    released = mu @ jnp.linalg.solve(sigma_xz, mu) + jnp.trace(jnp.linalg.solve(sigma_xz, explained))
     np.testing.assert_allclose(acquisition.info(offset, local), released, rtol=1e-4)
 
 

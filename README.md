@@ -1,79 +1,52 @@
 # Augmented Bayesian Policy Search
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+JAX implementation of Augmented Bayesian Search (ABS), from our ICLR 2024 paper
+[Augmented Bayesian Policy Search](https://openreview.net/forum?id=OvlcyABNQT) ([arXiv](https://arxiv.org/abs/2407.04864)).
+If you use our code, please cite the paper.
 
-Code for [Augmented Bayesian Policy Search](https://openreview.net/forum?id=OvlcyABNQT) (ICLR 2024), rewritten in JAX
-0.11, Flax NNX, Optax and Orbax.
+ABS searches deterministic policies by local Bayesian optimization. A Gaussian process models the return around the
+current policy, and its prior mean comes from the performance difference lemma: critics of the current policy predict
+how the return changes away from it. The gradient posterior then combines the deterministic policy gradient with the
+returns actually observed.
 
-ABS searches linear policies by local Bayesian optimization. A Gaussian process models the return around the current
-policy θ. Each iteration evaluates the queries that most sharpen the GP's belief about the gradient at θ, then moves
-θ along the posterior gradient. ABS's prior mean comes from the performance-difference lemma: an ensemble of critics of
-the current policy, trained by TD on every transition seen, predicts how the return changes away from θ. The baselines
-are MPD (the same local BO with a constant prior mean) and ARS.
+![ABS on a synthetic 2-D example: the gradient posterior starts from the critic's policy gradient, sharpens with each query, and the policy steps along the most probable ascent direction.](.github/assets/abs-acquisition.gif)
 
-## Install
+## Installation
 
 ```bash
-uv sync                      # CUDA 12 JAX by default; CPU only: uv sync --no-group cuda
-uv sync --group figures      # pandas, matplotlib, seaborn for the figures
+git clone https://github.com/kallel-mahdi/abs.git
+cd abs
+uv sync                      # CUDA 12 JAX; CPU only: uv sync --no-group cuda
 ```
 
-JAX reuses compiled executables across processes in `$XDG_CACHE_HOME/abps/jax` (normally `~/.cache/abps/jax`),
-including short compilations used by tests. Override the location with `JAX_COMPILATION_CACHE_DIR`; the standard
-`JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS` and `JAX_ENABLE_COMPILATION_CACHE` settings are also respected.
-
-## Run
+## Usage
 
 ```bash
-abps-train abs/hopper --seed 0                 # 500 critic updates per query
-abps-train abs/hopper --seed 0 --corrected     # with the released-code deviations fixed (DEVIATIONS.md)
-abps-train mpd/hopper --experiment.gp.n-max 60  # any config field can be overridden
+abps-train abs/hopper --seed 0    # ABS
+abps-train mpd/hopper --seed 0    # MPD: the same local Bayesian optimization with a constant prior mean
+abps-train ars/hopper --seed 0    # Augmented Random Search
 abps-train --help
 ```
 
-The experiments are `configs/<method>/<task>.yaml` for `abs`, `mpd` and `ars` on `inverted_pendulum`, `swimmer`,
-`hopper`, `halfcheetah`, `walker2d` and `ant`, plus `abs/pendulum` for the acquisition figure.
+The experiments are in `configs/<method>/<task>.yaml`, for `inverted_pendulum`, `swimmer`, `hopper`, `halfcheetah`,
+`walker2d` and `ant`. Any config field can be overridden on the command line; for example,
+`--experiment.critic.steps 5000` restores the paper's critic budget (the default is 500 updates per query). A run
+writes checkpoints and `metrics.jsonl` to `runs/<method>/<task>/seed_<s>/` and resumes from its latest checkpoint.
 
-ABS defaults to 500 critic updates after each query, 1,000 after a new center, and 1,000 for the first fit. To restore
-the paper's critic budget, pass `--experiment.critic.steps 5000` (20,000 for `abs/pendulum`); the new-center budget
-remains twice the query budget. `--corrected` leaves this training budget unchanged.
+`python -m figures.curves runs` draws the learning curves, the ablation and the critic R² plots.
 
-A run writes `runs/<method>/<task>/seed_<s>/`, which holds:
-- `checkpoints/`: Orbax checkpoints, whose root metadata is the run's config. A run resumes from its latest checkpoint, saves on SIGTERM, and refuses a directory that belongs to a different experiment.
-- `metrics.jsonl`: one line per iteration (`eval/`, `gp/`, `critic/`, `acquisition/`, `move/`, `time/`), mirrored to W&B with `--wandb online`.
+## Citation
 
-## Figures
-
-```bash
-python -m figures.curves runs corrected=runs_corrected   # learning curves, ablation, R² (with --prior-test-episodes 5)
-python -m figures.acquisition runs/abs/pendulum/seed_0   # the acquisition landscape
+```bibtex
+@inproceedings{kallel2024abs,
+  author    = {Mahdi Kallel and Debabrota Basu and Riad Akrour and Carlo D'Eramo},
+  title     = {Augmented Bayesian Policy Search},
+  booktitle = {International Conference on Learning Representations},
+  year      = {2024},
+  url       = {https://openreview.net/forum?id=OvlcyABNQT},
+}
 ```
-
-## Layout
-
-```
-abps/
-  config.py        Env · Search · GP · Critic · ARS sections, read from configs/
-  core/            the equations, pure JAX
-    policy.py        linear policies and the observation normalizer
-    gp.py            kernel, likelihood, hyperparameter fit, gradient posterior
-    acquisition.py   the information objective and its maximization
-    optimize.py      multistart box-constrained L-BFGS
-    critic.py        Q-network ensemble and TD training
-    prior.py         the advantage prior and its validation R²
-    replay.py        the replay buffer
-  rollout.py       Gymnasium episodes as fixed-shape arrays
-  methods/         base (the contract), local_bo, abs, mpd, ars
-  experiment/      train (the loop), evaluate (episodes, measurements)
-  runs/            store (directories, Orbax), log (metrics, W&B)
-  cli.py
-figures/           curves.py, acquisition.py
-tests/
-```
-
-`uv run pytest` checks the equations against dense references and the released formulas, and checks that a resumed
-run equals an uninterrupted one.
 
 ## License
 
-MIT.
+MIT

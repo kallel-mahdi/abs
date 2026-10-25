@@ -25,19 +25,26 @@ class Local:
     theta: jax.Array
     mean: jax.Array  # μ'
     factor: jax.Array  # Cholesky factor of Σ'
-    whitened_cross: jax.Array  # (K + σ_n² I)⁻¹ ∂K(θ, X)
-    whitened_mean: jax.Array  # Σ'⁻¹ μ'
+    whitened_cross: jax.Array  # L_K⁻¹ ∂K(θ, X)
+    whitened_mean: jax.Array  # L_gradient⁻¹ μ'
 
     @classmethod
     def at(cls, posterior: gp.Posterior, theta: jax.Array, prior_gradient: jax.Array) -> "Local":
         mean, cov = gp.gradient(posterior, theta, prior_gradient)
         factor = gp.cholesky(cov)
         cross = gp.kernel_gradient(posterior.params, theta, posterior.theta)
-        return cls(posterior, theta, mean, factor, gp.solve(posterior.factor, cross), gp.solve(factor, mean))
+        return cls(
+            posterior,
+            theta,
+            mean,
+            factor,
+            jax.scipy.linalg.solve_triangular(posterior.factor, cross, lower=True),
+            jax.scipy.linalg.solve_triangular(factor, mean, lower=True),
+        )
 
 
 def info(offsets: jax.Array, local: Local) -> jax.Array:
-    return local.mean @ local.whitened_mean + gain(offsets, local)
+    return local.whitened_mean @ local.whitened_mean + gain(offsets, local)
 
 
 def gain(offsets: jax.Array, local: Local) -> jax.Array:
@@ -45,11 +52,17 @@ def gain(offsets: jax.Array, local: Local) -> jax.Array:
     params, posterior = local.posterior.params, local.posterior
     queries = local.theta + offsets.reshape(-1, local.theta.size)
     cross = gp.kernel(params, posterior.theta, queries)
-    s = gp.covariance(params, queries) - cross.T @ gp.solve(posterior.factor, cross)
-    c = gp.kernel_gradient(params, local.theta, queries).T - local.whitened_cross.T @ cross
-    u = c.T @ gp.solve(local.factor, c)
-    p = c.T @ local.whitened_mean
-    factor = gp.cholesky(s - u)
+    whitened = jax.scipy.linalg.solve_triangular(posterior.factor, cross, lower=True)
+    s = gp.covariance(params, queries) - whitened.T @ whitened
+    c = gp.kernel_gradient(params, local.theta, queries).T - local.whitened_cross.T @ whitened
+    whitened_c = jax.scipy.linalg.solve_triangular(local.factor, c, lower=True)
+    u = whitened_c.T @ whitened_c
+    p = whitened_c.T @ local.whitened_mean
+    conditional = s - u
+    if len(queries) == 1:
+        # Independent observation noise remains after conditioning on the gradient.
+        conditional = jnp.maximum(conditional, params.noise**2)
+    factor = gp.cholesky(conditional)
     return p @ gp.solve(factor, p) + jnp.trace(gp.solve(factor, u))
 
 
@@ -61,4 +74,4 @@ def acquire(local: Local, key: jax.Array, sigma: float, config: GP) -> tuple[jax
     offsets, value = minimize(
         lambda z: -gain(z, local), starts, -bound, bound, maxiter=config.maxiter, tolerance=config.tolerance
     )
-    return local.theta + offsets[None], {"info": local.mean @ local.whitened_mean - value}
+    return local.theta + offsets[None], {"info": local.whitened_mean @ local.whitened_mean - value}

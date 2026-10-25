@@ -1,4 +1,5 @@
-"""Episodes of a batch of policies in Gymnasium MuJoCo, as fixed-shape arrays [policy, episode, time]."""
+"""Episodes of a batch of policies in Gymnasium MuJoCo, as fixed-shape arrays [policy, episode, time], and the
+evaluations the search keeps of them."""
 
 import gymnasium as gym
 import jax
@@ -14,9 +15,27 @@ from abps.env.policy import Normalizer, Policy
 class Transitions:
     observations: jax.Array
     actions: jax.Array
-    rewards: jax.Array  # scaled as in the training objective
+    rewards: jax.Array  # raw environment rewards
     next_observations: jax.Array
     terminated: jax.Array
+
+
+@struct.dataclass
+class Evaluation:
+    """Policies with their measured objective and the states they visited: what the GP conditions on (a window of
+    them), what the advantage prior is centered on (one), and what the critics are validated on."""
+
+    theta: jax.Array  # [n, d]
+    returns: jax.Array  # [n]
+    noise: jax.Array  # [n] spread of returns over episodes; zero for a single episode
+    states: jax.Array  # [n, episodes · time, obs]
+    weights: jax.Array  # [n, episodes · time]  γ^t / episodes, so a weighted sum averages over the episodes
+
+    def push(self, other: "Evaluation", n_max: int) -> "Evaluation":
+        return jax.tree.map(lambda x, y: jnp.concatenate([x, y])[-n_max:], self, other)
+
+    def __len__(self) -> int:
+        return len(self.returns)
 
 
 @struct.dataclass
@@ -24,12 +43,8 @@ class Rollout:
     """Every policy's episodes. `valid` marks the steps that happened, the last real one included."""
 
     theta: jax.Array  # [policy, dim]
-    observations: jax.Array  # [policy, episode, time, obs]
-    actions: jax.Array
-    rewards: jax.Array  # raw environment rewards
-    next_observations: jax.Array
-    terminated: jax.Array
-    valid: jax.Array
+    transitions: Transitions  # [policy, episode, time, ...]
+    valid: jax.Array  # [policy, episode, time]
     discount: float = struct.field(pytree_node=False)
     reward_scale: float = struct.field(pytree_node=False)
 
@@ -41,68 +56,45 @@ class Rollout:
     @property
     def episode_returns(self) -> jax.Array:
         """The training objective, discounted and scaled, per episode [policy, episode]."""
-        return (self.weights * self.rewards / self.reward_scale).sum(-1)
+        return (self.weights * self.transitions.rewards / self.reward_scale).sum(-1)
 
     @property
     def returns(self) -> jax.Array:
         return self.episode_returns.mean(-1)
 
     @property
-    def noise(self) -> jax.Array:
-        """Each policy's spread of returns over its episodes; zero for a single episode."""
-        return self.episode_returns.std(-1)
-
-    @property
     def raw_returns(self) -> jax.Array:
         """The environment's undiscounted, unscaled return, averaged over episodes."""
-        return (self.valid * self.rewards).sum(-1).mean(-1)
+        return (self.valid * self.transitions.rewards).sum(-1).mean(-1)
 
     @property
     def episodes(self) -> int:
         return self.valid.shape[0] * self.valid.shape[1]
 
-    def states(self, episodes: int) -> tuple[jax.Array, jax.Array]:
-        """The first `episodes` episodes' states, concatenated in time [policy, episodes · time, obs], and their weights
-        γ^t / episodes, so that a weighted sum over them averages over the episodes."""
-        p, _, t, o = self.observations.shape
+    @property
+    def rows(self) -> tuple[Transitions, jax.Array]:
+        """Every step as a row, rewards scaled as in the training objective, and which rows happened."""
+        transitions = self.transitions.replace(rewards=self.transitions.rewards / self.reward_scale)
+        return jax.tree.map(lambda x: x.reshape(-1, *x.shape[3:]), transitions), self.valid.reshape(-1)
+
+    def evaluation(self, episodes: int) -> Evaluation:
+        """Returns over all episodes; the states of the first `episodes`, concatenated in time."""
+        p, _, t, o = self.transitions.observations.shape
+        states = self.transitions.observations[:, :episodes].reshape(p, episodes * t, o)
         weights = self.weights[:, :episodes].reshape(p, -1) / episodes
-        return self.observations[:, :episodes].reshape(p, episodes * t, o), weights
-
-    def per_episode(self) -> list[tuple[Transitions, jax.Array]]:
-        """Every episode's transitions [time, ...] and which of its steps are real: fixed-shape pieces, so whatever
-        consumes them compiles once."""
-        p, e = self.valid.shape[:2]
-        return [
-            (
-                Transitions(
-                    self.observations[i, j],
-                    self.actions[i, j],
-                    self.rewards[i, j] / self.reward_scale,
-                    self.next_observations[i, j],
-                    self.terminated[i, j],
-                ),
-                self.valid[i, j],
-            )
-            for i in range(p)
-            for j in range(e)
-        ]
-
-
-def policy(env: Env) -> Policy:
-    """The linear policy class searched on the task."""
-    with gym.make(env.name, **env.kwargs) as instance:
-        observation_dim, action_dim = instance.observation_space.shape[0], instance.action_space.shape[0]
-    return Policy(observation_dim, action_dim, env.features, env.action_scale)
+        return Evaluation(self.theta, self.returns, self.episode_returns.std(-1), states, weights)
 
 
 class Envs:
-    """A pool of environments reused across calls. A call plays every policy's episodes in lockstep on the CPU;
-    finished episodes are no longer stepped."""
+    """A pool of environments reused across calls, and the linear policy class searched on them. A call plays every
+    policy's episodes in lockstep on the CPU; finished episodes are no longer stepped."""
 
-    def __init__(self, env: Env, policy: Policy):
-        self.env, self.policy, self.pool = env, policy, []
+    def __init__(self, env: Env):
+        self.env, self.pool = env, [gym.make(env.name, **env.kwargs)]
+        spaces = self.pool[0].observation_space, self.pool[0].action_space
+        self.policy = Policy(spaces[0].shape[0], spaces[1].shape[0], env.features, env.action_scale)
         self.cpu = jax.devices("cpu")[0]
-        self.act = jax.jit(jax.vmap(lambda theta, s, normalizer: policy(theta, normalizer(s)), (0, 0, None)))
+        self.act = jax.jit(jax.vmap(lambda theta, s, normalizer: self.policy(theta, normalizer(s)), (0, 0, None)))
 
     def __call__(self, theta: jax.Array, normalizer: Normalizer, *, episodes: int, seed: list[int]) -> Rollout:
         theta = np.asarray(theta)
@@ -118,12 +110,11 @@ class Envs:
             "rewards": np.zeros((n, horizon)),
             "next_observations": np.zeros((n, horizon, s.shape[-1])),
             "terminated": np.zeros((n, horizon), bool),
-            "valid": np.zeros((n, horizon), bool),
         }
-        active = np.ones(n, bool)
+        valid, active = np.zeros((n, horizon), bool), np.ones(n, bool)
         for t in range(horizon):
             a = np.asarray(self.act(parameters, s, normalizer))
-            record["observations"][:, t], record["actions"][:, t], record["valid"][:, t] = s, a, active
+            record["observations"][:, t], record["actions"][:, t], valid[:, t] = s, a, active
             for i in np.flatnonzero(active):
                 s[i], record["rewards"][i, t], record["terminated"][i, t], truncated, _ = envs[i].step(a[i])
                 active[i] = not (record["terminated"][i, t] or truncated)
@@ -131,5 +122,13 @@ class Envs:
             if not active.any():
                 break
 
-        per_policy = {name: jnp.asarray(x.reshape(len(theta), episodes, *x.shape[1:])) for name, x in record.items()}
-        return Rollout(jnp.asarray(theta), **per_policy, discount=self.env.discount, reward_scale=self.env.reward_scale)
+        def per_policy(x):
+            return jnp.asarray(x.reshape(len(theta), episodes, *x.shape[1:]))
+
+        return Rollout(
+            jnp.asarray(theta),
+            Transitions(**{name: per_policy(x) for name, x in record.items()}),
+            per_policy(valid),
+            discount=self.env.discount,
+            reward_scale=self.env.reward_scale,
+        )

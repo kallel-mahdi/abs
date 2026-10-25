@@ -1,5 +1,5 @@
 """Augmented Bayesian Policy Search (ICLR 2024): local Bayesian optimization of linear policies whose Gaussian
-process prior mean comes from an ensemble of learned critics. Everything runs in JAX's native float32."""
+process prior mean comes from an ensemble of learned critics. Everything runs in float32 at full matmul precision."""
 
 import os
 from pathlib import Path
@@ -11,3 +11,5 @@ if jax.config.jax_compilation_cache_dir is None:
     jax.config.update("jax_compilation_cache_dir", str(cache))
 if "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS" not in os.environ:
     jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+# Full float32 matmuls (no TF32 on the GPU): the GP's gradient covariance is a near-cancelling difference.
+jax.config.update("jax_default_matmul_precision", "highest")

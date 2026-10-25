@@ -4,7 +4,6 @@ The GP hyperparameter fit and the acquisition both use it."""
 import jax
 import jax.numpy as jnp
 import optax
-import optax.tree_utils as otu
 
 
 def minimize(fun, starts, lower, upper, *, maxiter: int, tolerance: float):
@@ -35,7 +34,7 @@ def minimize(fun, starts, lower, upper, *, maxiter: int, tolerance: float):
         value, grad = value_and_grad(u, state=state)
         updates, state = optimizer.update(grad, state, u, value=value, grad=grad, value_fn=objective)
         u = optax.apply_updates(u, updates)
-        value = otu.tree_get(state, "value")
+        value = optax.tree.get(state, "value")
         improved = finite(u) & jnp.isfinite(value) & (value < best_value)
         best_u = jax.tree.map(lambda new, old: jnp.where(improved, new, old), u, best_u)
         best_value = jnp.where(improved, value, best_value)
@@ -43,14 +42,14 @@ def minimize(fun, starts, lower, upper, *, maxiter: int, tolerance: float):
 
     def running(carry):
         u, state, _, best_value, stale = carry
-        count, grad = otu.tree_get(state, "count"), otu.tree_get(state, "grad")
-        info = otu.tree_get(state, "info")
-        healthy = finite((u, grad)) & jnp.isfinite(otu.tree_get(state, "value")) & (info.decrease_error <= 0)
+        count, grad = optax.tree.get(state, "count"), optax.tree.get(state, "grad")
+        info = optax.tree.get(state, "info")
+        healthy = finite((u, grad)) & jnp.isfinite(optax.tree.get(state, "value")) & (info.decrease_error <= 0)
         # A float32 line search can stop making progress before the gradient tolerance is reachable.
         return (
             (count < maxiter)
             & jnp.isfinite(best_value)
-            & ((count == 0) | (healthy & (stale < 5) & (otu.tree_norm(grad) >= tolerance)))
+            & ((count == 0) | (healthy & (stale < 5) & (optax.tree.norm(grad) >= tolerance)))
         )
 
     def solve(start):

@@ -33,22 +33,33 @@ def test_linear_policy_layout():
 def test_rollouts_count_the_terminal_step_and_stop_at_truncation():
     """Pendulum-v1 truncates at 200 steps: every step until then counts, nothing after."""
     env = Env(
-        name="Pendulum-v1", horizon=250, discount=0.9, reward_scale=10.0, normalize_obs=False, features="pendulum"
+        name="Pendulum-v1",
+        horizon=250,
+        discount=0.9,
+        reward_scale=10.0,
+        normalize_obs=False,
+        features="pendulum",
+        action_scale=2.0,
     )
-    policy = Policy(3, 1, "pendulum", 2.0)
-    rollout = Envs(env, policy)(jnp.zeros((2, 2)), Normalizer.create(3), episodes=3, seed=[0])
+    envs = Envs(env)
+    assert envs.policy == Policy(3, 1, "pendulum", 2.0)
+    rollout = envs(jnp.zeros((2, 2)), Normalizer.create(3), episodes=3, seed=[0])
     assert rollout.valid.shape == (2, 3, 250)
     assert rollout.valid.sum(-1).tolist() == [[200] * 3] * 2
-    expected = (rollout.rewards[..., :200] * 0.9 ** np.arange(200) / 10).sum(-1).mean(-1)
+    rewards = rollout.transitions.rewards
+    expected = (rewards[..., :200] * 0.9 ** np.arange(200) / 10).sum(-1).mean(-1)
     np.testing.assert_allclose(rollout.returns, expected, rtol=1e-4)
-    _, weights = rollout.states(3)
-    np.testing.assert_allclose(weights.sum(-1), (0.9 ** np.arange(200)).sum(), rtol=1e-4)  # γ^t averaged over episodes
-    np.testing.assert_allclose(rollout.raw_returns, rollout.rewards.sum(-1).mean(-1), rtol=1e-4)
+    evaluation = rollout.evaluation(3)
+    np.testing.assert_allclose(
+        evaluation.weights.sum(-1), (0.9 ** np.arange(200)).sum(), rtol=1e-4
+    )  # γ^t averaged over episodes
+    np.testing.assert_allclose(rollout.raw_returns, rewards.sum(-1).mean(-1), rtol=1e-4)
+    np.testing.assert_allclose(evaluation.returns, rollout.returns)
 
 
 def test_rollouts_are_seeded():
     env = Env(name="InvertedPendulum-v5", horizon=30, discount=0.99, reward_scale=1.0, normalize_obs=False)
-    envs, theta = Envs(env, Policy(4, 1)), jnp.ones((2, 4)) * 0.1
+    envs, theta = Envs(env), jnp.ones((2, 4)) * 0.1
     first = envs(theta, Normalizer.create(4), episodes=2, seed=[1, 2])
     again = envs(theta, Normalizer.create(4), episodes=2, seed=[1, 2])
-    np.testing.assert_array_equal(first.observations, again.observations)
+    np.testing.assert_array_equal(first.transitions.observations, again.transitions.observations)

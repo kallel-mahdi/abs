@@ -53,7 +53,7 @@ def main(arguments: list[str]) -> None:
     if arms:
         ablation = pd.concat([main_runs[main_runs.method == "ABS"], *arms])
         panels(ablation, "best_objective", TASKS, "ablation", "best discounted return")
-    if "critic/r2" in main_runs:
+    if "eval/prior_r2" in main_runs:  # runs with --prior-test-episodes
         r2 = main_runs[main_runs.method == "ABS"].melt(
             ["task", "seed", "total_episodes"], ["critic/r2", "eval/prior_r2"], var_name="method", value_name="R²"
         )

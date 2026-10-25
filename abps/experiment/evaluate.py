@@ -7,7 +7,6 @@ import jax.numpy as jnp
 
 from abps.env.policy import Normalizer
 from abps.env.rollout import Envs, Rollout
-from abps.methods.base import Report
 
 
 class Evaluator:
@@ -26,11 +25,11 @@ class Evaluator:
         return rollout
 
 
-def measure(center: Rollout, report: Report, evaluator: Evaluator) -> dict:
-    """The center's return, and the best return among the center and this iteration's queries (the paper plots its
-    running maximum against the cumulative episodes), both raw and as the training objective."""
-    raw = jnp.concatenate([center.raw_returns, *[q.raw_returns for q in report.queries]])
-    objective = jnp.concatenate([center.returns, *[q.returns for q in report.queries]])
+def measure(center: Rollout, queries: list[Rollout], evaluator: Evaluator) -> dict:
+    """The center and this iteration's best return, raw and discounted/scaled. Log retains these iteration maxima
+    and accumulates their running maxima for the paper's learning curve."""
+    raw = jnp.concatenate([center.raw_returns, *[q.raw_returns for q in queries]])
+    objective = jnp.concatenate([center.returns, *[q.returns for q in queries]])
     return {
         "eval/return": center.raw_returns[0],
         "eval/return_max": raw.max(),
@@ -41,10 +40,10 @@ def measure(center: Rollout, report: Report, evaluator: Evaluator) -> dict:
     }
 
 
-def test_prior(envs: Envs, searcher, report: Report, episodes: int, seed: list[int]) -> dict:
+def test_prior(envs: Envs, searcher, queries: list[Rollout], episodes: int, seed: list[int]) -> dict:
     """R² of the learned prior at this iteration's queries, against fresh evaluations of them (the paper's R²
     figure); only methods with a learned prior."""
-    theta = jnp.concatenate([q.theta for q in report.queries])
+    theta = jnp.concatenate([q.theta for q in queries])
     observed = envs(theta, searcher.normalizer, episodes=episodes, seed=seed).returns
-    residual = jnp.sum((observed - searcher.prior(theta)) ** 2)
+    residual = jnp.sum((observed - searcher.prior.value(theta, searcher.normalizer)) ** 2)
     return {"eval/prior_r2": 1 - residual / jnp.sum((observed - observed.mean()) ** 2)}

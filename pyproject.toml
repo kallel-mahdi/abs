@@ -18,7 +18,6 @@ dependencies = [
   "numpy>=2.3",
   "pyyaml>=6",
   "tyro>=1.0.16",
-  "wandb>=0.20",
 ]
 
 [project.urls]
@@ -29,6 +28,7 @@ abps-train = "abps.experiment.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.11"]
+wandb = ["wandb>=0.20"]
 figures = ["pandas>=2.2", "matplotlib>=3.9", "seaborn>=0.13", "jupyter>=1"]
 cuda = ["jax[cuda12]>=0.12,<0.13"]
 

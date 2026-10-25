@@ -49,7 +49,7 @@ class Normalizer:
         return cls(jnp.zeros(()), jnp.zeros(dim), jnp.zeros(dim))
 
     def __call__(self, observations: jax.Array) -> jax.Array:
-        std = jnp.clip(jnp.sqrt(self.m2 / jnp.maximum(self.count, 1)), 1e-6, 1e6)
+        std = jnp.maximum(jnp.sqrt(self.m2 / self.count), 1e-6)  # constant dimensions stay finite
         return (observations - self.mean) / jnp.where(self.count > 0, std, 1)
 
     @jax.jit
@@ -57,11 +57,9 @@ class Normalizer:
         """Merge the valid rows of a batch of observations [..., dim] into the running statistics."""
         observations, valid = observations.reshape(-1, self.mean.size), valid.reshape(-1, 1)
         count = valid.sum()
-        mean = (valid * observations).sum(0) / jnp.maximum(count, 1)
+        mean = (valid * observations).sum(0) / count
         m2 = (valid * (observations - mean) ** 2).sum(0)
         total, delta = self.count + count, mean - self.mean
         return Normalizer(
-            total,
-            self.mean + delta * count / jnp.maximum(total, 1),
-            self.m2 + m2 + delta**2 * self.count * count / jnp.maximum(total, 1),
+            total, self.mean + delta * count / total, self.m2 + m2 + delta**2 * self.count * count / total
         )

@@ -9,3 +9,8 @@ dist/
 runs/
 wandb/
 outputs/
+
+# Generated figures, run outputs and simulator logs
+plots/
+runs_*/
+MUJOCO_LOG.TXT

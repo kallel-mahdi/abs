@@ -1,6 +1,5 @@
-"""An experiment, whole, from its config file `configs/<method>/<task>.yaml`. The settings follow the paper's runs
-with a reduced critic-training budget; `corrected` replaces the three deviations of the released ABS code
-(DEVIATIONS.md B1, B2, B4) by what the paper describes."""
+"""An experiment from `configs/<method>/<task>.yaml`. ABS defaults follow the paper's method, with pointwise prior
+fitting, R² weighting and worst-critic resets, and a reduced critic-training budget."""
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -56,8 +55,8 @@ class GP:
 class Critic:
     """ABS's ensemble of TD3-style twin critics of the center policy (paper Appendix B)."""
 
-    aggregation: Literal["mean", "softmax", "max"]  # how validation R² weights the critics; B4: the runs used mean
-    reset_worst: bool  # B2: re-initializing the worst critic at a new center never ran in the paper
+    aggregation: Literal["mean", "softmax", "max"]  # how validation R² weights the critics
+    reset_worst: bool  # re-initialize the worst critic at a new center when its R² is negative
     n_critics: int = 5
     hidden: tuple[int, ...] = (256, 256)
     dropout: float = 0.01

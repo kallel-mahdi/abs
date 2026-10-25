@@ -21,12 +21,6 @@ class Params:
     noise: jax.Array  # σ_n
     constant: jax.Array  # added to the prior mean
 
-    @classmethod
-    def create(cls, dim: int, config: GP) -> "Params":
-        return cls(
-            jnp.full(dim, sum(config.lengthscale_bounds) / 2), jnp.asarray(0.02), jnp.asarray(0.01), jnp.zeros(())
-        )
-
 
 def kernel(params: Params, x: jax.Array, z: jax.Array) -> jax.Array:
     delta = (x[:, None] - z[None]) / (params.lengthscales * jnp.sqrt(x.shape[-1]))
@@ -38,9 +32,15 @@ def kernel_gradient(params: Params, x: jax.Array, z: jax.Array) -> jax.Array:
     return kernel(params, x[None], z)[0, :, None] * (z - x) / (params.lengthscales**2 * x.size)
 
 
+def regularize(matrix: jax.Array) -> jax.Array:
+    """Regularize before factorization, including the conditioning kernel: posterior covariances subtract nearly
+    equal terms, so repairing only their final Cholesky leaves the unstable conditioning solve untouched."""
+    jitter = 1e-10 + 1e-5 * jnp.max(jnp.abs(jnp.diag(matrix)))
+    return matrix + jitter * jnp.eye(len(matrix), dtype=matrix.dtype)
+
+
 def cholesky(matrix: jax.Array) -> jax.Array:
-    jitter = 1e-10 * jnp.maximum(jnp.mean(jnp.abs(jnp.diag(matrix))), 1.0)
-    return jnp.linalg.cholesky((matrix + matrix.T) / 2 + jitter * jnp.eye(len(matrix)))
+    return jnp.linalg.cholesky(regularize(matrix))
 
 
 def solve(factor: jax.Array, rhs: jax.Array) -> jax.Array:
@@ -114,6 +114,7 @@ def gradient(posterior: Posterior, theta: jax.Array, prior_gradient: jax.Array) 
     μ' = ∇m(θ) + ∂K(θ, X)ᵀ α,    Σ' = σ_f² diag(1 / (ℓ² d)) − ∂K(θ, X)ᵀ (K + σ_n² I)⁻¹ ∂K(θ, X)."""
     params = posterior.params
     cross = kernel_gradient(params, theta, posterior.theta)
+    whitened = jax.scipy.linalg.solve_triangular(posterior.factor, cross, lower=True)
     curvature = params.scale**2 / (jnp.broadcast_to(params.lengthscales, theta.shape) ** 2 * theta.size)
-    cov = jnp.diag(curvature) - cross.T @ solve(posterior.factor, cross)
-    return prior_gradient + cross.T @ posterior.alpha, (cov + cov.T) / 2
+    cov = jnp.diag(curvature) - whitened.T @ whitened
+    return prior_gradient + cross.T @ posterior.alpha, cov

@@ -4,7 +4,10 @@
 import jax
 import jax.numpy as jnp
 
-from abps.methods.base import Evaluate, Report, Searcher
+from abps.config import Config
+from abps.env.policy import Policy
+from abps.env.rollout import Rollout
+from abps.methods.base import Evaluate, Searcher
 
 
 def ascent(directions: jax.Array, returns: jax.Array, b: int) -> tuple[jax.Array, jax.Array]:
@@ -16,10 +19,13 @@ def ascent(directions: jax.Array, returns: jax.Array, b: int) -> tuple[jax.Array
 
 
 class ARS(Searcher):
-    def iteration(self, evaluate: Evaluate, i: int, key: jax.Array) -> Report:
+    def __init__(self, config: Config, policy: Policy, key: jax.Array):
+        super().__init__(config, policy)
+
+    def iteration(self, evaluate: Evaluate, key: jax.Array) -> tuple[list[Rollout], dict]:
         search = self.config.search
         directions = jax.random.normal(key, (search.queries // 2, self.theta.size))
         rollout = evaluate(self.theta + search.sigma * jnp.concatenate([directions, -directions]), search.episodes)
         step, spread = ascent(directions, rollout.returns, self.config.ars.top_directions)
         self.theta = self.theta + search.learning_rate * step
-        return Report([rollout], {"move/spread": spread})
+        return [rollout], {"move/spread": spread}

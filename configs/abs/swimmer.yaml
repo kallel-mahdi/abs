@@ -14,7 +14,7 @@ gp:
   n_max: 39
   lengthscale_bounds: [0.0025, 0.05]
   constant_mean: false
-  fit_mean: average  # as run (DEVIATIONS.md B1)
+  fit_mean: pointwise
 critic:
-  aggregation: mean  # as run (B4)
-  reset_worst: false  # as run (B2)
+  aggregation: softmax
+  reset_worst: true

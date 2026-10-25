@@ -1,7 +1,7 @@
 """abps-train <method>/<task> [--seed N] [--corrected] [--experiment.<section>.<field> V] ...
 
-Experiments are the config files `configs/<method>/<task>.yaml`, with reduced critic-training budgets; `--corrected` replaces the
-deviations of the released ABS code (DEVIATIONS.md B1, B2, B4) by what the paper describes, and wins over explicit
+Experiments are the config files `configs/<method>/<task>.yaml`, with reduced critic-training budgets; `--corrected`
+enforces the paper's settings (pointwise prior fitting, softmax R² weighting, worst-critic resets) and wins over explicit
 overrides of those three fields."""
 
 from dataclasses import dataclass, field
