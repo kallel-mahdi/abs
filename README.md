@@ -34,8 +34,6 @@ The experiments are in `configs/<method>/<task>.yaml`, for `inverted_pendulum`, 
 writes checkpoints and `metrics.jsonl` to `runs/<method>/<task>/seed_<s>/` and resumes from its latest checkpoint.
 
 `python -m figures.curves runs` draws the learning curves, the ablation and the critic R² plots.
-`python -m figures.acquisition_movie` renders the GIF above from a rerun of the paper's acquisition notebook (see
-`figures/acquisition_movie/rerun.py`); `story.py` there sets what it shows and when.
 
 ## Citation
 
